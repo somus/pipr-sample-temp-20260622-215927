@@ -13,7 +13,7 @@ type RangeTarget = {
   range: CommentableRange;
 };
 
-function firstCommentableRange(manifest: DiffManifest): RangeTarget | undefined {
+function firstRightRange(manifest: DiffManifest): RangeTarget | undefined {
   for (const file of manifest.files) {
     for (const range of (file.commentableRanges ?? []) as CommentableRange[]) {
       if (range.side === "RIGHT") {
@@ -24,30 +24,48 @@ function firstCommentableRange(manifest: DiffManifest): RangeTarget | undefined 
 }
 
 export default definePipr((pipr) => {
-  pipr.model("deepseek/deepseek-v4-pro", {
+  const model = pipr.model("deepseek/deepseek-v4-pro", {
     name: "deepseek",
     apiKey: pipr.secret("DEEPSEEK_API_KEY"),
     options: { thinking: "high" },
   });
 
-  const smoke = pipr.task("publish-smoke", async (ctx) => {
-    const manifest = await ctx.change.diffManifest({ includePreviews: true });
-    const target = firstCommentableRange(manifest);
+  const reviewer = pipr.agent({
+    name: "deepseek-smoke-reviewer",
+    model,
+    instructions: [
+      "Run a concise smoke review for this pull request.",
+      "Return one short summary and no inline findings unless there is a clear correctness issue.",
+      "The task adds one deterministic inline finding separately to validate GitHub inline publishing.",
+    ].join("\n"),
+    output: pipr.schemas.review,
+    retry: { invalidOutput: 1, transientFailure: 1 },
+    prompt: (input: { manifest: DiffManifest }) => pipr.prompt`
+Review this TypeScript sample pull request.
+${pipr.compactManifest(input.manifest)}
+`,
+  });
 
-    ctx.output.summary(
-      {
-        title: "pipr smoke review",
-        body: `Static publishing task ran for ${ctx.repository.name}#${ctx.change.number ?? "local"}.`,
-      },
-      { key: "smoke-summary", merge: "replace", priority: 10 },
-    );
+  const smoke = pipr.task("deepseek-smoke", async (ctx) => {
+    const manifest = await ctx.change.diffManifest({ compressed: true });
+    const fullManifest = await ctx.change.diffManifest({ includePreviews: true });
+    const result = await ctx.pi.run(reviewer, { manifest });
+    const target = firstRightRange(fullManifest);
+
+    ctx.output.summary(result.summary, {
+      key: "deepseek-summary",
+      merge: "replace",
+      priority: 10,
+    });
 
     ctx.output.section(
       "smoke-details",
       [
+        "agent: deepseek-smoke-reviewer",
+        "model: deepseek/deepseek-v4-pro",
         `run id: ${ctx.run.id}`,
-        `changed files: ${manifest.files.length}`,
-        `head sha: ${manifest.headSha}`,
+        `changed files: ${fullManifest.files.length}`,
+        `head sha: ${fullManifest.headSha}`,
         `inline target: ${target ? target.file.path : "none"}`,
       ],
       {
@@ -60,27 +78,30 @@ export default definePipr((pipr) => {
 
     ctx.output.metadata({
       smoke: true,
-      changedFiles: manifest.files.length,
+      aiAgent: "deepseek-smoke-reviewer",
+      model: "deepseek/deepseek-v4-pro",
+      changedFiles: fullManifest.files.length,
       inlineTarget: target?.file.path ?? null,
     });
 
     if (!target) {
+      ctx.output.findings(result.inlineFindings);
       return;
     }
 
     const finding: ReviewFinding = {
-      body: "Static inline smoke finding from pipr. This validates inline review comment publishing.",
+      body: "DeepSeek smoke test reached inline publishing. This deterministic finding validates the GitHub review comment path.",
       path: target.file.path,
       rangeId: target.range.id,
       side: target.range.side,
       startLine: target.range.startLine,
       endLine: target.range.startLine,
-      data: { category: "smoke-test" },
+      data: { category: "deepseek-smoke-test" },
     };
-    ctx.output.findings([finding]);
+    ctx.output.findings([...result.inlineFindings, finding]);
   });
 
   pipr.on.changeRequest(["opened", "updated", "reopened", "ready"], smoke);
-  pipr.command("@pipr smoke", { permission: "write", description: "Run pipr smoke test." }, smoke);
+  pipr.command("@pipr smoke", { permission: "write", description: "Run pipr DeepSeek smoke test." }, smoke);
   pipr.local("smoke", smoke);
 });
