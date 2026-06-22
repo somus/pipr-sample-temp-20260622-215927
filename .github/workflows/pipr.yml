@@ -1,0 +1,30 @@
+name: pipr
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: somus/pipr-action-temp-20260622-215927@main
+        env:
+          DEEPSEEK_API_KEY: smoke-test-unused
+          GITHUB_TOKEN: ${{ github.token }}
+        with:
+          config-dir: .pipr
+          provider-id: deepseek
+          provider: deepseek
+          model: deepseek-v4-pro
+          api-key-env: DEEPSEEK_API_KEY
