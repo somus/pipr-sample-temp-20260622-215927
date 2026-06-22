@@ -20,7 +20,7 @@ jobs:
           fetch-depth: 0
       - uses: somus/pipr-action-temp-20260622-215927@main
         env:
-          DEEPSEEK_API_KEY: smoke-test-unused
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
           GITHUB_TOKEN: ${{ github.token }}
         with:
           config-dir: .pipr
