@@ -12,3 +12,7 @@ export function divide(left: number, right: number): number {
 export function firstNonEmpty(values: string[]): string {
   return values.find((value) => value.trim().length > 0)!;
 }
+
+export function lastValue<T>(values: T[]): T {
+  return values[values.length - 1]!;
+}
