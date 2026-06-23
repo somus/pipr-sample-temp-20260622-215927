@@ -15,3 +15,7 @@ export function average(values: number[]): number {
   }
   return values.reduce((sum, value) => sum + value, 0) / values.length;
 }
+
+export function max(values: number[]): number | undefined {
+  return values.length === 0 ? undefined : Math.max(...values);
+}
