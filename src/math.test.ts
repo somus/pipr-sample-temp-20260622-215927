@@ -11,6 +11,9 @@ test("divide returns the quotient", () => {
 
 test("average returns the mean", () => {
   expect(average([2, 4, 6])).toBe(4);
+  expect(average([7])).toBe(7);
+  expect(average([-2, 0, 2])).toBe(0);
+  expect(average([1, 2])).toBe(1.5);
 });
 
 test("average rejects empty lists", () => {
