@@ -10,5 +10,8 @@ export function divide(left: number, right: number): number {
 }
 
 export function average(values: number[]): number {
+  if (values.length === 0) {
+    throw new Error("Cannot average an empty list");
+  }
   return values.reduce((sum, value) => sum + value, 0) / values.length;
 }
