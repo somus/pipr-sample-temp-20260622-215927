@@ -8,3 +8,7 @@ export function divide(left: number, right: number): number {
   }
   return left / right;
 }
+
+export function firstNonEmpty(values: string[]): string {
+  return values.find((value) => value.trim().length > 0)!;
+}
