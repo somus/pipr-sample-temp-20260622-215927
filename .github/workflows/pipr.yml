@@ -2,13 +2,11 @@ name: pipr
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
   issue_comment:
     types: [created]
 
 permissions:
-  contents: write
-  packages: read
+  contents: read
   pull-requests: write
   issues: write
   checks: write
@@ -20,37 +18,11 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
-      - name: Login to GHCR
-        shell: bash
-        run: echo "$GITHUB_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-      - name: Run pipr image
-        shell: bash
+      - uses: somus/pipr@main
         env:
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
           GITHUB_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          event_dir="$(dirname "$GITHUB_EVENT_PATH")"
-          event_file="$(basename "$GITHUB_EVENT_PATH")"
-          docker run --rm \
-            --mount "type=bind,source=$GITHUB_WORKSPACE,target=/workspace" \
-            --mount "type=bind,source=$event_dir,target=/github-event,readonly" \
-            --workdir /workspace \
-            --env DEEPSEEK_API_KEY \
-            --env GITHUB_ACTIONS \
-            --env GITHUB_EVENT_NAME \
-            --env GITHUB_REPOSITORY \
-            --env GITHUB_TOKEN \
-            --env GITHUB_WORKSPACE=/workspace \
-            --env GITHUB_EVENT_PATH="/github-event/$event_file" \
-            --env GIT_CONFIG_COUNT=1 \
-            --env GIT_CONFIG_KEY_0=safe.directory \
-            --env GIT_CONFIG_VALUE_0=/workspace \
-            ghcr.io/somus/pipr-action:main \
-            action \
-            --config-dir .pipr \
-            --provider deepseek \
-            --model deepseek-v4-pro \
-            --api-key-env DEEPSEEK_API_KEY
+        with:
+          provider: deepseek
+          model: deepseek-v4-pro
+          api-key-env: DEEPSEEK_API_KEY
