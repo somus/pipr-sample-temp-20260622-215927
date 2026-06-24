@@ -9,6 +9,7 @@ permissions:
   packages: read
   pull-requests: write
   issues: write
+  checks: write
 
 jobs:
   image-smoke:
@@ -47,7 +48,6 @@ jobs:
             ghcr.io/somus/pipr-action:main \
             action \
             --config-dir .pipr \
-            --provider-id deepseek \
             --provider deepseek \
             --model deepseek-v4-pro \
             --api-key-env DEEPSEEK_API_KEY

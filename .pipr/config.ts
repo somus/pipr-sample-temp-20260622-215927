@@ -1,14 +1,14 @@
 import { definePipr } from "@pipr/sdk";
 
 export default definePipr((pipr) => {
-  const model = pipr.model("deepseek/deepseek-v4-pro", {
-    name: "deepseek",
-    apiKey: pipr.secret("DEEPSEEK_API_KEY"),
+  const model = pipr.model({
+    provider: "deepseek",
+    model: "deepseek-v4-pro",
+    apiKey: pipr.secret({ name: "DEEPSEEK_API_KEY" }),
     options: { thinking: "high" },
   });
 
   const reviewer = pipr.reviewer({
-    name: "reviewer",
     model,
     instructions: [
       "Review the pull request diff for correctness, maintainability, and test coverage.",
@@ -17,13 +17,17 @@ export default definePipr((pipr) => {
   });
 
   pipr.review({
+    id: "review",
     reviewer,
     entrypoints: {
       changeRequest: ["opened", "updated", "reopened", "ready"],
       command: { pattern: "@pipr review", permission: "write" },
       local: "review",
     },
+    check: { name: "pipr / review" },
     inlineComments: { max: 5 },
     timeout: "5m",
   });
+
+  pipr.checks({ aggregate: { name: "pipr / all" } });
 });
