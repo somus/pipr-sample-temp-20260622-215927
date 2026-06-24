@@ -39,6 +39,7 @@ jobs:
             --mount "type=bind,source=$event_dir,target=/github-event,readonly" \
             --workdir /workspace \
             --env DEEPSEEK_API_KEY \
+            --env GITHUB_ACTIONS \
             --env GITHUB_EVENT_NAME \
             --env GITHUB_REPOSITORY \
             --env GITHUB_TOKEN \
