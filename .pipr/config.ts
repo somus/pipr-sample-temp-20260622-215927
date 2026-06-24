@@ -14,6 +14,7 @@ export default definePipr((pipr) => {
     instructions: [
       "Review the pull request diff for correctness, maintainability, and test coverage.",
       "Return concise, actionable findings that target valid diff ranges.",
+      "When a finding has a clear replacement for the selected range, include suggestedFix as exact replacement code with no Markdown fences or prose.",
     ].join("\n"),
     entrypoints: {
       changeRequest: ["opened", "updated", "reopened", "ready"],
