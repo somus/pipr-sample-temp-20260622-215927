@@ -8,17 +8,13 @@ export default definePipr((pipr) => {
     options: { thinking: "high" },
   });
 
-  const reviewer = pipr.reviewer({
+  pipr.review({
+    id: "review",
     model,
     instructions: [
       "Review the pull request diff for correctness, maintainability, and test coverage.",
       "Return concise, actionable findings that target valid diff ranges.",
     ].join("\n"),
-  });
-
-  pipr.review({
-    id: "review",
-    reviewer,
     entrypoints: {
       changeRequest: ["opened", "updated", "reopened", "ready"],
       command: { pattern: "@pipr review", permission: "write" },
