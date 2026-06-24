@@ -9,6 +9,7 @@ permissions:
   packages: read
   pull-requests: write
   issues: write
+  checks: write
 
 jobs:
   image-smoke:
@@ -27,6 +28,7 @@ jobs:
         env:
           DEEPSEEK_API_KEY: smoke-test-unused
           GITHUB_TOKEN: ${{ github.token }}
+          PIPR_DRY_RUN: "1"
         run: |
           set -euo pipefail
           event_dir="$(dirname "$GITHUB_EVENT_PATH")"
@@ -39,6 +41,7 @@ jobs:
             --env GITHUB_EVENT_NAME \
             --env GITHUB_REPOSITORY \
             --env GITHUB_TOKEN \
+            --env PIPR_DRY_RUN \
             --env GITHUB_WORKSPACE=/workspace \
             --env GITHUB_EVENT_PATH="/github-event/$event_file" \
             --env GIT_CONFIG_COUNT=1 \
@@ -47,7 +50,6 @@ jobs:
             ghcr.io/somus/pipr-action:main \
             action \
             --config-dir .pipr \
-            --provider-id deepseek \
             --provider deepseek \
             --model deepseek-v4-pro \
             --api-key-env DEEPSEEK_API_KEY
