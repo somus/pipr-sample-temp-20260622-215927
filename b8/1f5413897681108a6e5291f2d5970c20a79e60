@@ -1,0 +1,19 @@
+.github/workflows/debug-resolve-thread.yml
+  s_647b279dc72317::t_31c2acd473aeff 1-42
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.13",
+  "base_commit_sha": "b81f5413897681108a6e5291f2d5970c20a79e60",
+  "prompts": {},
+  "sessions": {
+    "s_647b279dc72317": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019efceb-4eaf-72d3-bfa3-691bccddb4c7",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Somasundaram Ayyappan <1802828+somus@users.noreply.github.com>"
+    }
+  }
+}
