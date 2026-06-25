@@ -1,65 +1,45 @@
-import { definePipr, z } from "@pipr/sdk";
-import type { ReviewFinding } from "@pipr/sdk";
+import { definePipr } from "@pipr/sdk";
 
 export default definePipr((pipr) => {
   const model = pipr.model({
     provider: "deepseek",
     model: "deepseek-v4-pro",
     apiKey: pipr.secret({ name: "DEEPSEEK_API_KEY" }),
-    options: { thinking: "high" },
+    options: { thinking: "medium" },
   });
 
-  const diagnosticOutput = pipr.schema({
-    id: "diagnostics/reviewdog-style",
-    schema: z.strictObject({
-      summary: z.string(),
-      diagnostics: z.array(z.strictObject({
-        body: z.string(),
-        path: z.string(),
-        rangeId: z.string(),
-        side: z.enum(["RIGHT", "LEFT"]),
-        startLine: z.number().int().positive(),
-        endLine: z.number().int().positive(),
-        suggestedFix: z.string().optional(),
-      })),
-    }),
-  });
-
-  const diagnostics = pipr.agent({
-    name: "diff-diagnostics",
+  const hygiene = pipr.agent({
+    name: "pr-hygiene",
     model,
     instructions: `
-      Produce diff-scoped diagnostics for actionable defects only.
-      Include suggestedFix only when there is an exact replacement for the selected range.
+      Review pull request hygiene. Check whether behavior changes include tests,
+      public API changes include docs or changelog notes, lockfile changes match manifests,
+      and the PR size is reasonable. Return concise actionable findings.
     `,
-    output: diagnosticOutput,
-    prompt: (input: { manifest: unknown }) => pipr.prompt`
+    output: pipr.schemas.review,
+    prompt: (input: { manifest: unknown; changedFiles: unknown }) => pipr.prompt`
+      ${pipr.section("Changed files", pipr.json(input.changedFiles, { maxCharacters: 20000 }))}
       ${pipr.section("Diff Manifest", pipr.json(input.manifest, { maxCharacters: 60000 }))}
     `,
   });
 
   const task = pipr.task({
-    name: "diff-diagnostics",
+    name: "pr-hygiene",
+    check: { enabled: true, name: "pr hygiene", required: false },
     async run(ctx) {
-      const manifest = await ctx.change.diffManifest({ compressed: true });
-      const result = await ctx.pi.run(diagnostics, { manifest });
-      const inlineFindings: ReviewFinding[] = result.diagnostics.map((diagnostic) => ({
-        body: diagnostic.body,
-        path: diagnostic.path,
-        rangeId: diagnostic.rangeId,
-        side: diagnostic.side,
-        startLine: diagnostic.startLine,
-        endLine: diagnostic.endLine,
-        ...(diagnostic.suggestedFix ? { suggestedFix: diagnostic.suggestedFix } : {}),
-      }));
+      const changedFiles = await ctx.change.changedFiles();
+      ctx.log.info(`Checking PR hygiene for ${changedFiles.length} changed file(s).`);
+      const manifest = await ctx.change.diffManifest({ compressed: true, maxPreviewLines: 80 });
+      const result = await ctx.pi.run(hygiene, { manifest, changedFiles });
+      ctx.check.pass("PR hygiene review completed.");
       await ctx.comment({
-        main: `## Diff Diagnostics\n\n${result.summary}`,
-        inlineFindings,
+        main: result.summary.body,
+        inlineFindings: result.inlineFindings,
       });
     },
   });
 
-  pipr.on.changeRequest({ actions: ["opened", "updated"], task });
-  pipr.command({ pattern: "@pipr diagnostics", permission: "write", task });
-  pipr.local({ name: "diagnostics", task });
+  pipr.on.changeRequest({ actions: ["opened", "updated", "reopened", "ready"], task });
+  pipr.command({ pattern: "@pipr hygiene", permission: "write", task });
+  pipr.local({ name: "hygiene", task });
 });
