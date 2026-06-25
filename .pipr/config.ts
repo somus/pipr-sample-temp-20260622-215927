@@ -1,22 +1,50 @@
 import { definePipr } from "@pipr/sdk";
 
 export default definePipr((pipr) => {
-  const model = pipr.model({
+  const primary = pipr.model({
+    id: "deepseek/deepseek-v4-pro-primary",
     provider: "deepseek",
     model: "deepseek-v4-pro",
     apiKey: pipr.secret({ name: "DEEPSEEK_API_KEY" }),
     options: { thinking: "high" },
   });
 
-  pipr.review({
-    id: "review",
-    model,
+  const fallback = pipr.model({
+    id: "deepseek/deepseek-v4-pro-fast",
+    provider: "deepseek",
+    model: "deepseek-v4-pro",
+    apiKey: pipr.secret({ name: "DEEPSEEK_API_KEY" }),
+    options: { thinking: "medium" },
+  });
+
+  const reviewer = pipr.reviewer({
+    name: "bug-hunter",
+    model: primary,
+    fallbacks: [fallback],
     instructions: `
-      Review the pull request diff for correctness, security,
-      maintainability, and test coverage.
-      Return only actionable findings that target valid diff ranges.
+      Review only likely defects: broken logic, edge cases, concurrency risks,
+      data loss, performance regressions, and behavior changes missing tests.
+      Ignore style-only feedback and broad refactors.
     `,
-    inlineComments: { max: 5 },
-    timeout: "5m",
+    timeout: "7m",
+  });
+
+  pipr.review({
+    id: "bug-hunter",
+    reviewer,
+    paths: {
+      exclude: ["docs/**", "**/*.md"],
+    },
+    inlineComments: { max: 8 },
+    timeout: "7m",
+    entrypoints: {
+      changeRequest: ["opened", "updated", "reopened", "ready"],
+      command: {
+        pattern: "@pipr bugs",
+        permission: "write",
+        description: "Run a defect-focused review.",
+      },
+      local: "bugs",
+    },
   });
 });
