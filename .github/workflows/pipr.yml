@@ -20,7 +20,9 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
-      - uses: somus/pipr@main
+      - uses: docker://ghcr.io/somus/pipr-action:main
         env:
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
           GITHUB_TOKEN: ${{ github.token }}
+        with:
+          args: action
