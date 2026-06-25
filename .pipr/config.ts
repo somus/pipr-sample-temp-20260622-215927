@@ -1,96 +1,71 @@
-import { definePipr } from "@pipr/sdk";
+import { definePipr, definePlugin, z } from "@pipr/sdk";
+
+const ownersPlugin = definePlugin((pipr) => {
+  const ownerInput = pipr.schema({
+    id: "owners/input",
+    schema: z.strictObject({ path: z.string() }),
+  });
+  const ownerOutput = pipr.schema({
+    id: "owners/output",
+    schema: z.strictObject({
+      path: z.string(),
+      owner: z.string(),
+      policy: z.string(),
+    }),
+  });
+  const catalog = [
+    { prefix: "packages/runtime/", owner: "runtime", policy: "Review runtime and publication behavior strictly." },
+    { prefix: "packages/cli/", owner: "cli", policy: "Review command UX and local developer workflows." },
+    { prefix: "docs/", owner: "docs", policy: "Review product language and examples." },
+  ];
+
+  return {
+    ownerLookup: pipr.tool({
+      name: "owner_lookup",
+      description: "Return the owner and review policy for a repository path.",
+      input: ownerInput,
+      output: ownerOutput,
+      run({ input, signal }) {
+        signal?.throwIfAborted();
+        const match = catalog.find((entry) => input.path.startsWith(entry.prefix));
+        return {
+          path: input.path,
+          owner: match?.owner ?? "general",
+          policy: match?.policy ?? "Review with the default repository policy.",
+        };
+      },
+      toModelOutput(output) {
+        return {
+          owner: output.owner,
+          policy: output.policy,
+        };
+      },
+    }),
+  };
+});
 
 export default definePipr((pipr) => {
-  const primary = pipr.model({
-    id: "deepseek/deepseek-v4-pro-primary",
+  const model = pipr.model({
     provider: "deepseek",
     model: "deepseek-v4-pro",
     apiKey: pipr.secret({ name: "DEEPSEEK_API_KEY" }),
     options: { thinking: "high" },
   });
 
-  const fast = pipr.model({
-    id: "deepseek/deepseek-v4-pro-fast",
-    provider: "deepseek",
-    model: "deepseek-v4-pro",
-    apiKey: pipr.secret({ name: "DEEPSEEK_API_KEY" }),
-    options: { thinking: "medium" },
-  });
+  const owners = pipr.use(ownersPlugin);
 
-  const specialistPrompt = (input: { manifest: unknown; focus: string }) => pipr.prompt`
-    ${pipr.section("Focus", input.focus)}
-    ${pipr.section("Diff Manifest", pipr.json(input.manifest, { maxCharacters: 60000 }))}
-  `;
-
-  const security = pipr.agent({
-    name: "security-specialist",
-    model: primary,
-    instructions: "Focus on exploitable security issues. Ignore non-security style feedback.",
-    output: pipr.schemas.review,
-    tools: pipr.tools.readOnly,
-    prompt: specialistPrompt,
-  });
-  const strictSecurity = security.extend({
-    instructions: "Prioritize directly exploitable paths and suppress speculative findings.",
-  });
-  const tests = pipr.agent({
-    name: "test-specialist",
-    model: fast,
-    instructions: "Focus on missing regression tests and untested behavior changes.",
-    output: pipr.schemas.review,
-    tools: pipr.tools.readOnly,
-    prompt: specialistPrompt,
-  });
-  const maintainability = pipr.agent({
-    name: "maintainability-specialist",
-    model: primary,
-    instructions: "Focus on complexity, duplication, brittle APIs, and confusing control flow.",
-    output: pipr.schemas.review,
-    tools: pipr.tools.readOnly,
-    prompt: specialistPrompt,
-  });
-
-  const aggregator = pipr.agent({
-    name: "review-aggregator",
-    model: primary,
-    fallbacks: [fast],
+  pipr.review({
+    id: "owner-aware-review",
+    model,
+    tools: [...pipr.tools.readOnly, owners.ownerLookup],
     instructions: `
-      Merge specialist reviews into one concise review. Deduplicate findings,
-      keep only the highest confidence actionable items, and preserve valid inline ranges.
+      Review the pull request using owner_lookup for files where ownership or
+      policy is unclear. Apply owner policy, but report only actionable defects.
     `,
-    output: pipr.schemas.review,
-    prompt: (input: { specialistResults: unknown; prior: unknown }) => pipr.prompt`
-      ${pipr.section("Prior pipr review", pipr.json(input.prior, { maxCharacters: 20000 }))}
-      ${pipr.section("Specialist results", pipr.json(input.specialistResults, { maxCharacters: 60000 }))}
-    `,
-    retry: { invalidOutput: 1, transientFailure: 1 },
-    timeout: "6m",
-  });
-
-  const task = pipr.task({
-    name: "multi-agent-review",
-    check: { enabled: true, name: "multi-agent review", required: true },
-    async run(ctx) {
-      const manifest = await ctx.change.diffManifest({ compressed: true });
-      const prior = await ctx.review.prior();
-      const [securityResult, testResult, maintainabilityResult] = await Promise.all([
-        ctx.pi.run(strictSecurity, { manifest, focus: "security" }, { model: primary, fallbacks: [fast] }),
-        ctx.pi.run(tests, { manifest, focus: "tests" }, { model: fast, fallbacks: [primary] }),
-        ctx.pi.run(maintainability, { manifest, focus: "maintainability" }),
-      ]);
-      const result = await ctx.pi.run(aggregator, {
-        specialistResults: { securityResult, testResult, maintainabilityResult },
-        prior,
-      });
-      ctx.check.pass("Multi-agent review completed.");
-      await ctx.comment({
-        main: result.summary.body,
-        inlineFindings: result.inlineFindings,
-      });
+    entrypoints: {
+      changeRequest: ["opened", "updated"],
+      command: { pattern: "@pipr owner-review", permission: "write" },
+      local: "owner-review",
     },
   });
-
-  pipr.on.changeRequest({ actions: ["opened", "updated", "reopened", "ready"], task });
-  pipr.command({ pattern: "@pipr multi", permission: "write", task });
-  pipr.local({ name: "multi", task });
 });
