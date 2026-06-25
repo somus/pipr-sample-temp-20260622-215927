@@ -21,10 +21,7 @@ export default definePipr((pipr) => {
       command: { pattern: "@pipr review", permission: "write" },
       local: "review",
     },
-    check: { name: "pipr / review" },
     inlineComments: { max: 5 },
     timeout: "5m",
   });
-
-  pipr.checks({ aggregate: { name: "pipr / all" } });
 });
