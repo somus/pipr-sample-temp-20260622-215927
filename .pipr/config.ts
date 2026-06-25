@@ -1,16 +1,4 @@
 import { definePipr } from "@pipr/sdk";
-import type { ReviewFinding } from "@pipr/sdk";
-
-type SecurityReview = {
-  summary: string;
-  risks: Array<{
-    title: string;
-    category: "auth" | "injection" | "secret" | "crypto" | "data-exposure" | "other";
-    severity: "low" | "medium" | "high" | "critical";
-    rationale: string;
-    finding?: ReviewFinding;
-  }>;
-};
 
 export default definePipr((pipr) => {
   const model = pipr.model({
@@ -20,86 +8,44 @@ export default definePipr((pipr) => {
     options: { thinking: "high" },
   });
 
-  const securityOutput = pipr.jsonSchema<SecurityReview>({
-    id: "security/sast-review",
-    schema: {
-      type: "object",
-      additionalProperties: false,
-      required: ["summary", "risks"],
-      properties: {
-        summary: { type: "string" },
-        risks: {
-          type: "array",
-          items: {
-            type: "object",
-            additionalProperties: false,
-            required: ["title", "category", "severity", "rationale"],
-            properties: {
-              title: { type: "string" },
-              category: {
-                type: "string",
-                enum: ["auth", "injection", "secret", "crypto", "data-exposure", "other"],
-              },
-              severity: { type: "string", enum: ["low", "medium", "high", "critical"] },
-              rationale: { type: "string" },
-              finding: {
-                type: "object",
-                additionalProperties: false,
-                required: ["body", "path", "rangeId", "side", "startLine", "endLine"],
-                properties: {
-                  body: { type: "string" },
-                  path: { type: "string" },
-                  rangeId: { type: "string" },
-                  side: { type: "string", enum: ["RIGHT", "LEFT"] },
-                  startLine: { type: "number" },
-                  endLine: { type: "number" },
-                  suggestedFix: { type: "string" },
-                },
-              },
-            },
-          },
-        },
+  pipr.checks({
+    aggregate: { enabled: true, name: "pipr quality gate" },
+  });
+
+  pipr.limits({
+    timeoutSeconds: 420,
+    diffManifest: {
+      fullMaxEstimatedTokens: 32000,
+      condensedMaxEstimatedTokens: 64000,
+    },
+  });
+
+  pipr.config({
+    publication: {
+      maxInlineComments: 6,
+      autoResolve: {
+        enabled: true,
+        model,
+        instructions: "Resolve only when the changed code clearly addresses the finding.",
+        synchronize: true,
+        userReplies: { enabled: true, allowedActors: "write" },
       },
     },
   });
 
-  const security = pipr.agent({
-    name: "security-sast",
+  pipr.review({
+    id: "quality-gate",
     model,
     instructions: `
-      Review for exploitable security issues only. Focus on auth bypasses,
-      injection, unsafe deserialization, secret exposure, cryptography misuse,
-      authorization gaps, and data exposure. Do not report hypothetical style issues.
+      Act as a merge quality gate. Report only blocking correctness,
+      security, reliability, or test coverage issues that should prevent merge.
+      If no blocking issue exists, say so clearly.
     `,
-    output: securityOutput,
-    tools: pipr.tools.readOnly,
-    retry: { invalidOutput: 1, transientFailure: 1 },
-    prompt: (input: { manifest: unknown }) => pipr.prompt`
-      ${pipr.section("Security review policy", "Return only risks with a concrete attack path.")}
-      ${pipr.section("Diff Manifest", pipr.json(input.manifest, { maxCharacters: 60000 }))}
-    `,
+    check: { enabled: true, name: "quality gate", required: true },
+    inlineComments: { max: 6 },
+    comment: (result) => ({
+      main: `## Quality Gate\n\n${result.summary.body}`,
+      inlineFindings: result.inlineFindings,
+    }),
   });
-
-  const task = pipr.task({
-    name: "security-sast",
-    check: { enabled: true, name: "security-sast", required: true },
-    async run(ctx) {
-      const manifest = await ctx.change.diffManifest({ compressed: true });
-      const result = await ctx.pi.run(security, { manifest });
-      const inlineFindings = result.risks.flatMap((risk) => (risk.finding ? [risk.finding] : []));
-      if (result.risks.some((risk) => risk.severity === "critical" || risk.severity === "high")) {
-        ctx.check.fail("High or critical security risk found.");
-      } else {
-        ctx.check.pass("No high or critical security risks found.");
-      }
-      await ctx.comment({
-        main: `## Security SAST\n\n${result.summary}`,
-        inlineFindings,
-      });
-    },
-  });
-
-  pipr.on.changeRequest({ actions: ["opened", "updated", "reopened", "ready"], task });
-  pipr.command({ pattern: "@pipr security", permission: "write", task });
-  pipr.local({ name: "security", task });
 });
