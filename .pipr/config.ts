@@ -26,14 +26,5 @@ export default definePipr((pipr) => {
     timeout: "5m",
   });
 
-  pipr.config({
-    publication: {
-      autoResolve: {
-        instructions:
-          "If the PR author or maintainer explains that a finding is intentional for a live smoke test or accepted sample API behavior, accept that explanation and resolve the finding unless the current code shows a concrete unresolved risk.",
-      },
-    },
-  });
-
   pipr.checks({ aggregate: { name: "pipr / all" } });
 });
