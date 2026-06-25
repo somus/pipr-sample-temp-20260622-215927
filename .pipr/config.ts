@@ -1,46 +1,56 @@
-import { definePipr } from "@pipr/sdk";
+import { definePipr, z } from "@pipr/sdk";
 
 export default definePipr((pipr) => {
   const model = pipr.model({
     provider: "deepseek",
     model: "deepseek-v4-pro",
     apiKey: pipr.secret({ name: "DEEPSEEK_API_KEY" }),
-    options: { thinking: "high" },
+    options: { thinking: "medium" },
   });
 
-  const askAgent = pipr.agent({
-    name: "interactive-ask",
+  const changelogOutput = pipr.schema({
+    id: "release/changelog-draft",
+    schema: z.strictObject({
+      category: z.enum(["added", "changed", "fixed", "removed", "security", "internal"]),
+      entry: z.string(),
+      rationale: z.string(),
+    }),
+  });
+
+  const changelog = pipr.agent({
+    name: "changelog-draft",
     model,
     instructions: `
-      Answer reviewer questions about the pull request. Use diff context and prior
-      pipr findings. If the answer needs external systems or hidden state, say so.
+      Draft one changelog entry for this pull request. Do not edit files.
+      Say "internal" when the change is not user-facing.
     `,
-    output: pipr.schemas.summary,
-    prompt: (input: { question: string; manifest: unknown; prior: unknown }) => pipr.prompt`
-      ${pipr.section("Question", input.question)}
-      ${pipr.section("Prior pipr review", pipr.json(input.prior, { maxCharacters: 20000 }))}
+    output: changelogOutput,
+    prompt: (input: { manifest: unknown }) => pipr.prompt`
       ${pipr.section("Diff Manifest", pipr.json(input.manifest, { maxCharacters: 60000 }))}
     `,
   });
 
-  const task = pipr.task<{ question: string }>({
-    name: "interactive-ask",
-    async run(ctx, input) {
-      if (!ctx.command) {
-        throw new Error("interactive-ask is a command-only task");
-      }
+  const task = pipr.task({
+    name: "changelog-draft",
+    async run(ctx) {
       const manifest = await ctx.change.diffManifest({ compressed: true });
-      const prior = await ctx.review.prior();
-      const answer = await ctx.pi.run(askAgent, { question: input.question, manifest, prior });
-      await ctx.command.reply(answer.body);
+      const result = await ctx.pi.run(changelog, { manifest });
+      await ctx.comment(
+        [
+          "## Changelog Draft",
+          "",
+          `**Category:** ${result.category}`,
+          "",
+          result.entry,
+          "",
+          "### Rationale",
+          result.rationale,
+        ].join("\n"),
+      );
     },
   });
 
-  pipr.command({
-    pattern: "@pipr ask <question...>",
-    permission: "read",
-    description: "Ask a question about this pull request.",
-    parse: (args) => ({ question: args.question ?? "" }),
-    task,
-  });
+  pipr.on.changeRequest({ actions: ["opened", "updated"], task });
+  pipr.command({ pattern: "@pipr changelog", permission: "write", task });
+  pipr.local({ name: "changelog", task });
 });
