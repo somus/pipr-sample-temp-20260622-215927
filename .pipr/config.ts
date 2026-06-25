@@ -5,35 +5,42 @@ export default definePipr((pipr) => {
     provider: "deepseek",
     model: "deepseek-v4-pro",
     apiKey: pipr.secret({ name: "DEEPSEEK_API_KEY" }),
-    options: { thinking: "medium" },
+    options: { thinking: "high" },
   });
 
-  pipr.review({
-    id: "pr-briefing",
+  const askAgent = pipr.agent({
+    name: "interactive-ask",
     model,
     instructions: `
-      Produce a maintainer briefing instead of a defect hunt. Summarize what changed,
-      classify the PR type, explain review risk, and include a concise file walkthrough.
-      Return no inline findings unless there is a concrete blocker.
+      Answer reviewer questions about the pull request. Use diff context and prior
+      pipr findings. If the answer needs external systems or hidden state, say so.
     `,
-    inlineComments: false,
-    comment: (result, context) => [
-      "## PR Briefing",
-      "",
-      `**Change:** ${context.change.title}`,
-      "",
-      result.summary.body,
-      "",
-      "```mermaid",
-      "flowchart LR",
-      "  A[Changed files] --> B[Review focus]",
-      "  B --> C[Merge decision]",
-      "```",
-    ].join("\n"),
-    entrypoints: {
-      changeRequest: ["opened", "updated", "reopened", "ready"],
-      command: { pattern: "@pipr describe", permission: "read" },
-      local: "describe",
+    output: pipr.schemas.summary,
+    prompt: (input: { question: string; manifest: unknown; prior: unknown }) => pipr.prompt`
+      ${pipr.section("Question", input.question)}
+      ${pipr.section("Prior pipr review", pipr.json(input.prior, { maxCharacters: 20000 }))}
+      ${pipr.section("Diff Manifest", pipr.json(input.manifest, { maxCharacters: 60000 }))}
+    `,
+  });
+
+  const task = pipr.task<{ question: string }>({
+    name: "interactive-ask",
+    async run(ctx, input) {
+      if (!ctx.command) {
+        throw new Error("interactive-ask is a command-only task");
+      }
+      const manifest = await ctx.change.diffManifest({ compressed: true });
+      const prior = await ctx.review.prior();
+      const answer = await ctx.pi.run(askAgent, { question: input.question, manifest, prior });
+      await ctx.command.reply(answer.body);
     },
+  });
+
+  pipr.command({
+    pattern: "@pipr ask <question...>",
+    permission: "read",
+    description: "Ask a question about this pull request.",
+    parse: (args) => ({ question: args.question ?? "" }),
+    task,
   });
 });
