@@ -1,0 +1,42 @@
+name: Debug Resolve Thread
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  debug:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve review thread with GITHUB_TOKEN
+        env:
+          GH_TOKEN: ${{ github.token }}
+          THREAD_ID: PRRT_kwDOTCA-pc6MGyIO
+        run: |
+          gh api graphql -f threadId="$THREAD_ID" -f query='
+            mutation($threadId:ID!) {
+              resolveReviewThread(input:{threadId:$threadId}) {
+                thread {
+                  id
+                  isResolved
+                }
+              }
+            }
+          '
+          gh api graphql -f owner=somus -f name=pipr-sample-temp-20260622-215927 -F number=12 -f query='
+            query($owner:String!,$name:String!,$number:Int!) {
+              repository(owner:$owner,name:$name) {
+                pullRequest(number:$number) {
+                  reviewThreads(first:20) {
+                    nodes {
+                      id
+                      isResolved
+                    }
+                  }
+                }
+              }
+            }
+          '
