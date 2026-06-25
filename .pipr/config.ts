@@ -1,4 +1,4 @@
-import { definePipr, z } from "@pipr/sdk";
+import { definePipr } from "@pipr/sdk";
 
 export default definePipr((pipr) => {
   const model = pipr.model({
@@ -8,70 +8,40 @@ export default definePipr((pipr) => {
     options: { thinking: "high" },
   });
 
-  const dependencyOutput = pipr.schema({
-    id: "dependency/risk-summary",
-    schema: z.strictObject({
-      summary: z.string(),
-      risks: z.array(z.string()),
-      followUps: z.array(z.string()),
-    }),
-  });
-
-  const dependencyReviewer = pipr.agent({
-    name: "dependency-risk",
+  const ciTriage = pipr.agent({
+    name: "ci-triage",
     model,
     instructions: `
-      Review dependency manifest and lockfile changes. Flag likely breaking upgrades,
-      suspicious package additions, install script risk, lockfile drift, and migration work.
-      Do not claim live CVEs unless they are visible in the diff.
+      Explain likely causes for a CI failure using only the pasted log excerpt,
+      pull request metadata, prior review state, and diff context. Be explicit when
+      the log is insufficient.
     `,
-    output: dependencyOutput,
-    prompt: (input: { manifest: unknown }) => pipr.prompt`
-      ${pipr.section("Dependency diff", pipr.json(input.manifest, { maxCharacters: 60000 }))}
+    output: pipr.schemas.summary,
+    prompt: (input: { log: string; manifest: unknown; prior: unknown }) => pipr.prompt`
+      ${pipr.section("CI log excerpt", input.log)}
+      ${pipr.section("Prior pipr review", pipr.json(input.prior, { maxCharacters: 20000 }))}
+      ${pipr.section("Diff Manifest", pipr.json(input.manifest, { maxCharacters: 60000 }))}
     `,
   });
 
-  const task = pipr.task({
-    name: "dependency-risk",
-    async run(ctx) {
-      const paths = {
-        include: [
-          "**/package.json",
-          "**/bun.lock",
-          "**/package-lock.json",
-          "**/pnpm-lock.yaml",
-          "**/yarn.lock",
-          "**/requirements*.txt",
-          "**/pyproject.toml",
-          "**/Cargo.toml",
-          "**/Cargo.lock",
-          "**/go.mod",
-          "**/go.sum",
-        ],
-      };
-      const manifest = await ctx.change.diffManifest({ compressed: true, paths });
-      if (manifest.files.length === 0) {
-        await ctx.comment("## Dependency Risk\n\nNo dependency files changed.");
-        return;
+  const task = pipr.task<{ log: string }>({
+    name: "ci-triage",
+    async run(ctx, input) {
+      if (!ctx.command) {
+        throw new Error("ci-triage is a command-only task");
       }
-      const result = await ctx.pi.run(dependencyReviewer, { manifest }, { paths });
-      await ctx.comment(
-        [
-          "## Dependency Risk",
-          "",
-          result.summary,
-          "",
-          "### Risks",
-          ...result.risks.map((risk) => `- ${risk}`),
-          "",
-          "### Follow-ups",
-          ...result.followUps.map((followUp) => `- ${followUp}`),
-        ].join("\n"),
-      );
+      const manifest = await ctx.change.diffManifest({ compressed: true });
+      const prior = await ctx.review.prior();
+      const result = await ctx.pi.run(ciTriage, { log: input.log, manifest, prior });
+      await ctx.command.reply(`## CI Triage\n\n${result.body}`);
     },
   });
 
-  pipr.on.changeRequest({ actions: ["opened", "updated"], task });
-  pipr.command({ pattern: "@pipr dependency-risk", permission: "write", task });
-  pipr.local({ name: "dependency-risk", task });
+  pipr.command({
+    pattern: "@pipr ci <log...>",
+    permission: "write",
+    description: "Triage a pasted CI failure log.",
+    parse: (args) => ({ log: args.log ?? "" }),
+    task,
+  });
 });
