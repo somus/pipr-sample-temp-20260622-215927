@@ -12,3 +12,5 @@ export function divide(left: number, right: number): number {
 export function average(values: number[]): number {
   return values.reduce((total, value) => total + value, 0) / values.length;
 }
+
+// pipr recipe smoke: plugin-tool-review
