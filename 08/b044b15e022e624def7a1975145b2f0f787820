@@ -1,0 +1,21 @@
+src/math.ts
+  s_439d125ac53dc4::t_f79c673a69b630 12-15
+src/math.test.ts
+  s_439d125ac53dc4::t_f79c673a69b630 2,11-13
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.13",
+  "base_commit_sha": "08b044b15e022e624def7a1975145b2f0f787820",
+  "prompts": {},
+  "sessions": {
+    "s_439d125ac53dc4": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019efc6d-3d13-7633-926a-d3f3a9ab6f50",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Somasundaram Ayyappan <1802828+somus@users.noreply.github.com>"
+    }
+  }
+}
