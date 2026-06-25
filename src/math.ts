@@ -4,7 +4,7 @@ export function add(left: number, right: number): number {
 
 export function divide(left: number, right: number): number {
   if (right === 0) {
-    throw new Error("Cannot divide by zero");
+    throw new Error("Cannot divide by zero in divide");
   }
   return left / right;
 }
